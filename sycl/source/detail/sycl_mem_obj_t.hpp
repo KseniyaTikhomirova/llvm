@@ -58,7 +58,7 @@ public:
         MOpenCLInterop(false), MHostPtrReadOnly(false), MNeedWriteBack(true),
         MSizeInBytes(SizeInBytes), MUserPtr(nullptr), MShadowCopy(nullptr),
         MUploadDataFunctor(nullptr), MSharedPtrStorage(nullptr),
-        MNotBlockingRelease(Allocator->isDefault()) {}
+        MNotBlockingRelease(MAllocator->isDefault()) {}
 
   SYCLMemObjT(const property_list &Props,
               std::unique_ptr<SYCLMemObjAllocator> Allocator)
@@ -252,6 +252,9 @@ public:
   bool isInterop() const;
 
   bool isHostPointerReadOnly() const { return MHostPtrReadOnly; }
+
+  // For unit test purposes
+  bool isNotBlockingRelease() {return MNotBlockingRelease; }
 
 protected:
   // An allocateMem helper that determines which host ptr to use

@@ -283,6 +283,38 @@ class DispatchHostTask {
     return PI_SUCCESS;
   }
 
+  void executeDelayedTask(Command *Cmd, Scheduler::ReadLockT &Lock,
+                          std::vector<Command *> &ToCleanUp) const {
+    if (!Cmd)
+      return;
+    for (const EventImplPtr &Dependency : Cmd->getPreparedDepsEvents()) {
+      if (Dependency->isCompleted())
+        continue;
+      // if command exists -> not cleaned up -> not enqueued or not completed
+      // abd we should wait
+      if (Command *DepCommand =
+              static_cast<Command *>(Dependency->getCommand()))
+        executeDelayedTask(DepCommand, Lock, ToCleanUp);
+      Dependency->waitInternal();
+    }
+
+    for (const EventImplPtr &Dependency : Cmd->getPreparedHostDepsEvents()) {
+      if (Dependency->isCompleted())
+        continue;
+      // if command exists -> not cleaned up -> not enqueued or not completed
+      // abd we should wait
+      if (Command *DepCommand =
+              static_cast<Command *>(Dependency->getCommand()))
+        executeDelayedTask(DepCommand, Lock, ToCleanUp);
+      Dependency->waitInternal();
+    }
+    if (Cmd->isSuccessfullyEnqueued())
+      Cmd->MEvent->waitInternal();
+    else
+      Scheduler::GraphProcessor::waitForEvent(Cmd->getEvent(), Lock, ToCleanUp,
+                                              true);
+  }
+
 public:
   DispatchHostTask(ExecCGCommand *ThisCmd,
                    std::vector<interop_handle::ReqToMem> ReqToMem)
@@ -303,6 +335,13 @@ public:
       // reset host-task's lambda and quit
       HostTask.MHostTask.reset();
       return;
+    }
+    std::vector<Command *> ToCleanUp;
+    Scheduler &Sched = Scheduler::getInstance();
+    for (auto &toExecute : MThisCmd->MDelayedEnqueueEvents) {
+      Scheduler::ReadLockT Lock(Sched.MGraphLock);
+      executeDelayedTask(static_cast<Command *>(toExecute->getCommand()), Lock,
+                         ToCleanUp);
     }
 
     try {
@@ -331,8 +370,6 @@ public:
     // of empty command.
     // Also, it's possible to have record deallocated prior to enqueue process.
     // Thus we employ read-lock of graph.
-    std::vector<Command *> ToCleanUp;
-    Scheduler &Sched = Scheduler::getInstance();
     {
       Scheduler::ReadLockT Lock(Sched.MGraphLock);
 

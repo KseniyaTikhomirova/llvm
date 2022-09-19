@@ -11,6 +11,7 @@
 #include <atomic>
 #include <cstdint>
 #include <deque>
+#include <list>
 #include <memory>
 #include <optional>
 #include <set>
@@ -328,6 +329,8 @@ public:
   /// Indicates that the node will be freed by cleanup after enqueue. Such nodes
   /// should be ignored by other cleanup mechanisms.
   bool MPostEnqueueCleanup = false;
+
+  std::list<EventImplPtr> MDelayedEnqueueEvents;
 };
 
 /// The empty command does nothing during enqueue. The task can be used to

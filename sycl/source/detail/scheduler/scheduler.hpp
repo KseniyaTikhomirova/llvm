@@ -572,6 +572,15 @@ protected:
 
     std::vector<SYCLMemObjI *> MMemObjs;
 
+    template <typename T>
+    typename detail::enable_if_t<
+        std::is_same<typename std::remove_cv_t<T>, Requirement>::value,
+        EmptyCommand *>
+    addEmptyCmd(Command *Cmd, const std::vector<T *> &Req,
+                const QueueImplPtr &Queue, Command::BlockReason Reason,
+                std::vector<Command *> &ToEnqueue,
+                const bool AddDepsToLeaves = true);
+
   private:
     /// Inserts the command required to update the memory object state in the
     /// context.
@@ -601,15 +610,6 @@ protected:
     std::set<Command *> findDepsForReq(MemObjRecord *Record,
                                        const Requirement *Req,
                                        const ContextImplPtr &Context);
-
-    template <typename T>
-    typename detail::enable_if_t<
-        std::is_same<typename std::remove_cv_t<T>, Requirement>::value,
-        EmptyCommand *>
-    addEmptyCmd(Command *Cmd, const std::vector<T *> &Req,
-                const QueueImplPtr &Queue, Command::BlockReason Reason,
-                std::vector<Command *> &ToEnqueue,
-                const bool AddDepsToLeaves = true);
 
   protected:
     /// Finds a command dependency corresponding to the record.
@@ -764,6 +764,9 @@ protected:
   /// GraphReadLock will be unlocked/locked as needed. Upon return from the
   /// function, GraphReadLock will be left in locked state.
   void waitForRecordToFinish(MemObjRecord *Record, ReadLockT &GraphReadLock);
+
+  void enqueueHostTaskForDelayedRelease(MemObjRecord *Record,
+                                      ReadLockT &GraphReadLock);
 
   GraphBuilder MGraphBuilder;
   RWLockT MGraphLock;

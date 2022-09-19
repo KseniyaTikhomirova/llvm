@@ -73,6 +73,74 @@ void Scheduler::waitForRecordToFinish(MemObjRecord *Record,
   }
 }
 
+double timer() {
+  using namespace std::chrono;
+  auto tp = high_resolution_clock::now();
+  auto tp_duration = tp.time_since_epoch();
+  duration<double> sec = tp.time_since_epoch();
+  return sec.count() * 1000;
+}
+
+double start, t1, t2;
+
+void Scheduler::enqueueHostTaskForDelayedRelease(MemObjRecord *Record,
+                                                 ReadLockT &GraphReadLock) {
+
+  // Will contain the list of dependencies for the Release Command
+  std::set<Command *> DepCommands;
+  std::vector<Command *> ToCleanUp;
+  // LeavesCollection iterator is not compatible with set to do simple
+  // insert(RL.begin(), RL.end())
+  for (Command *cmd : Record->MReadLeaves)
+    DepCommands.insert(cmd);
+  for (Command *cmd : Record->MWriteLeaves)
+    DepCommands.insert(cmd);
+
+  ExecCGCommand *HostCmd = nullptr;
+  EmptyCommand *EmptyCmd = nullptr;
+
+  try {
+    std::unique_ptr<detail::HostTask> HT(new detail::HostTask);
+    std::unique_ptr<detail::CG> ConnectCG(new detail::CGHostTask(
+        std::move(HT), /* Queue = */ {}, /* Context = */ {}, /* Args = */ {},
+        /* ArgsStorage = */ {}, /* AccStorage = */ {},
+        /* SharedPtrStorage = */ {}, /* Requirements = */ {},
+        /* DepEvents = */ {}, CG::CodeplayHostTask,
+        /* Payload */ {}));
+    HostCmd = new ExecCGCommand(std::move(ConnectCG),
+                                Scheduler::getInstance().getDefaultHostQueue());
+    std::vector<Command *> ToEnqueue;
+    EmptyCmd = MGraphBuilder.addEmptyCmd<Requirement>(
+        HostCmd, {}, Scheduler::getInstance().getDefaultHostQueue(),
+        Command::BlockReason::HostTask, ToEnqueue);
+    assert(ToEnqueue.size() == 0);
+  } catch (const std::bad_alloc &) {
+    throw runtime_error("Out of host memory", PI_ERROR_OUT_OF_HOST_MEMORY);
+  }
+  std::ignore = EmptyCmd->addDep(HostCmd->getEvent(), ToCleanUp);
+  HostCmd->MEmptyCmd = EmptyCmd;
+
+  for (AllocaCommandBase *AllocaCmd : Record->MAllocaCommands) {
+    Command *ReleaseCmd = AllocaCmd->getReleaseCmd();
+    for (Command *newDependency : DepCommands)
+      // to handle connect command
+      ReleaseCmd->addDep(newDependency->getEvent(), ToCleanUp);
+    HostCmd->MDelayedEnqueueEvents.push_back(ReleaseCmd->getEvent());
+
+#ifdef XPTI_ENABLE_INSTRUMENTATION
+    // Report these dependencies to the Command so these dependencies can be
+    // reported as edges
+    ReleaseCmd->resolveReleaseDependencies(DepCommands);
+#endif
+  }
+  EnqueueResultT Res;
+  bool Enqueued = GraphProcessor::enqueueCommand(HostCmd, Res, ToCleanUp,
+                                                 BlockingT::BLOCKING);
+  if (!Enqueued && EnqueueResultT::SyclEnqueueFailed == Res.MResult)
+    throw runtime_error("Enqueue process failed.", PI_ERROR_INVALID_OPERATION);
+  cleanupCommands(ToCleanUp);
+}
+
 EventImplPtr Scheduler::addCG(std::unique_ptr<detail::CG> CommandGroup,
                               QueueImplPtr Queue) {
   EventImplPtr NewEvent = nullptr;
@@ -260,7 +328,6 @@ void Scheduler::cleanupFinishedCommands(EventImplPtr FinishedEvent) {
 
 void Scheduler::removeMemoryObject(detail::SYCLMemObjI *MemObj,
                                    bool NotBlockingRelease) {
-  std::ignore = NotBlockingRelease;
   // We are going to traverse a graph of finished commands. Gather stream
   // objects from these commands if any and deallocate buffers for these stream
   // objects, this is needed to guarantee that streamed data is printed and
@@ -285,7 +352,10 @@ void Scheduler::removeMemoryObject(detail::SYCLMemObjI *MemObj,
         // No operations were performed on the mem object
         return;
 
-      waitForRecordToFinish(Record, Lock);
+      if (NotBlockingRelease)
+        enqueueHostTaskForDelayedRelease(Record, Lock);
+      else
+        waitForRecordToFinish(Record, Lock);
     }
 
     {
