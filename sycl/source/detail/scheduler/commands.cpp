@@ -338,10 +338,15 @@ public:
     }
     std::vector<Command *> ToCleanUp;
     Scheduler &Sched = Scheduler::getInstance();
-    for (auto &toExecute : MThisCmd->MDelayedEnqueueEvents) {
-      Scheduler::ReadLockT Lock(Sched.MGraphLock);
-      executeDelayedTask(static_cast<Command *>(toExecute->getCommand()), Lock,
-                         ToCleanUp);
+    for (auto &MemObjToRelease : MThisCmd->MDelayedReleaseMemObjects) {
+      {
+        Scheduler::ReadLockT Lock(Sched.MGraphLock);
+        MemObjRecord *Record =
+            Sched.MGraphBuilder.getMemObjRecord(MemObjToRelease);
+        assert(Record);
+        Sched.waitForRecordToFinish(Record, Lock);
+      }
+      Sched.cleanupRecordResources(MemObjToRelease);
     }
 
     try {

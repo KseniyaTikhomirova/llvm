@@ -330,7 +330,7 @@ public:
   /// should be ignored by other cleanup mechanisms.
   bool MPostEnqueueCleanup = false;
 
-  std::list<EventImplPtr> MDelayedEnqueueEvents;
+  std::list<SYCLMemObjI *> MDelayedReleaseMemObjects;
 };
 
 /// The empty command does nothing during enqueue. The task can be used to

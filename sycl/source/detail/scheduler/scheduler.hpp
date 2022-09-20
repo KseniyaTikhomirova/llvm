@@ -443,6 +443,11 @@ public:
 
   static MemObjRecord *getMemObjRecord(const Requirement *const Req);
 
+  static void deallocateStreams(
+      std::vector<std::shared_ptr<stream_impl>> &StreamsToDeallocate);
+
+  void cleanupRecordResources(SYCLMemObjI *MemObj);
+
   Scheduler();
   ~Scheduler();
 
@@ -765,8 +770,8 @@ protected:
   /// function, GraphReadLock will be left in locked state.
   void waitForRecordToFinish(MemObjRecord *Record, ReadLockT &GraphReadLock);
 
-  void enqueueHostTaskForDelayedRelease(MemObjRecord *Record,
-                                      ReadLockT &GraphReadLock);
+  void enqueueHostTaskForDelayedRelease(SYCLMemObjI *MemObj,
+                                        ReadLockT &GraphReadLock);
 
   GraphBuilder MGraphBuilder;
   RWLockT MGraphLock;

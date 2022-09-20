@@ -83,18 +83,21 @@ double timer() {
 
 double start, t1, t2;
 
-void Scheduler::enqueueHostTaskForDelayedRelease(MemObjRecord *Record,
+void Scheduler::enqueueHostTaskForDelayedRelease(SYCLMemObjI *MemObj,
                                                  ReadLockT &GraphReadLock) {
 
+#ifdef XPTI_ENABLE_INSTRUMENTATION
+  MemObjRecord *Record = MGraphBuilder.getMemObjRecord(MemObj);
+  assert(Record);
   // Will contain the list of dependencies for the Release Command
   std::set<Command *> DepCommands;
-  std::vector<Command *> ToCleanUp;
   // LeavesCollection iterator is not compatible with set to do simple
   // insert(RL.begin(), RL.end())
   for (Command *cmd : Record->MReadLeaves)
     DepCommands.insert(cmd);
   for (Command *cmd : Record->MWriteLeaves)
     DepCommands.insert(cmd);
+#endif
 
   ExecCGCommand *HostCmd = nullptr;
   EmptyCommand *EmptyCmd = nullptr;
@@ -117,22 +120,19 @@ void Scheduler::enqueueHostTaskForDelayedRelease(MemObjRecord *Record,
   } catch (const std::bad_alloc &) {
     throw runtime_error("Out of host memory", PI_ERROR_OUT_OF_HOST_MEMORY);
   }
+  std::vector<Command *> ToCleanUp;
   std::ignore = EmptyCmd->addDep(HostCmd->getEvent(), ToCleanUp);
   HostCmd->MEmptyCmd = EmptyCmd;
-
-  for (AllocaCommandBase *AllocaCmd : Record->MAllocaCommands) {
-    Command *ReleaseCmd = AllocaCmd->getReleaseCmd();
-    for (Command *newDependency : DepCommands)
-      // to handle connect command
-      ReleaseCmd->addDep(newDependency->getEvent(), ToCleanUp);
-    HostCmd->MDelayedEnqueueEvents.push_back(ReleaseCmd->getEvent());
+  HostCmd->MDelayedReleaseMemObjects.push_back(MemObj);
 
 #ifdef XPTI_ENABLE_INSTRUMENTATION
+  for (AllocaCommandBase *AllocaCmd : Record->MAllocaCommands) {
+    Command *ReleaseCmd = AllocaCmd->getReleaseCmd();
     // Report these dependencies to the Command so these dependencies can be
     // reported as edges
     ReleaseCmd->resolveReleaseDependencies(DepCommands);
-#endif
   }
+#endif
   EnqueueResultT Res;
   bool Enqueued = GraphProcessor::enqueueCommand(HostCmd, Res, ToCleanUp,
                                                  BlockingT::BLOCKING);
@@ -288,7 +288,7 @@ void Scheduler::waitForEvent(EventImplPtr Event) {
   cleanupCommands(ToCleanUp);
 }
 
-static void deallocateStreams(
+void Scheduler::deallocateStreams(
     std::vector<std::shared_ptr<stream_impl>> &StreamsToDeallocate) {
   // Deallocate buffers for stream objects of the finished commands. Iterate in
   // reverse order because it is the order of commands execution.
@@ -328,46 +328,27 @@ void Scheduler::cleanupFinishedCommands(EventImplPtr FinishedEvent) {
 
 void Scheduler::removeMemoryObject(detail::SYCLMemObjI *MemObj,
                                    bool NotBlockingRelease) {
-  // We are going to traverse a graph of finished commands. Gather stream
-  // objects from these commands if any and deallocate buffers for these stream
-  // objects, this is needed to guarantee that streamed data is printed and
-  // resources are released.
-  std::vector<std::shared_ptr<stream_impl>> StreamsToDeallocate;
-  // Similar to streams, we also collect the auxiliary resources used by the
-  // commands. Cleanup will make sure the commands do not own the resources
-  // anymore, so we just need them to survive the graph lock then they can die
-  // as they go out of scope.
-  std::vector<std::shared_ptr<const void>> AuxResourcesToDeallocate;
+  MemObjRecord *Record = nullptr;
 
   {
-    MemObjRecord *Record = nullptr;
+    // This only needs a shared mutex as it only involves enqueueing and
+    // awaiting for events
+    ReadLockT Lock(MGraphLock);
 
-    {
-      // This only needs a shared mutex as it only involves enqueueing and
-      // awaiting for events
-      ReadLockT Lock(MGraphLock);
+    Record = MGraphBuilder.getMemObjRecord(MemObj);
+    if (!Record)
+      // No operations were performed on the mem object
+      return;
 
-      Record = MGraphBuilder.getMemObjRecord(MemObj);
-      if (!Record)
-        // No operations were performed on the mem object
-        return;
-
-      if (NotBlockingRelease)
-        enqueueHostTaskForDelayedRelease(Record, Lock);
-      else
-        waitForRecordToFinish(Record, Lock);
-    }
-
-    {
-      WriteLockT Lock(MGraphLock, std::defer_lock);
-      acquireWriteLock(Lock);
-      MGraphBuilder.decrementLeafCountersForRecord(Record);
-      MGraphBuilder.cleanupCommandsForRecord(Record, StreamsToDeallocate,
-                                             AuxResourcesToDeallocate);
-      MGraphBuilder.removeRecordForMemObj(MemObj);
-    }
+    if (NotBlockingRelease)
+      enqueueHostTaskForDelayedRelease(MemObj, Lock);
+    else
+      waitForRecordToFinish(Record, Lock);
   }
-  deallocateStreams(StreamsToDeallocate);
+
+  if (!NotBlockingRelease) {
+    cleanupRecordResources(MemObj);
+  }
 }
 
 EventImplPtr Scheduler::addHostAccessor(Requirement *Req) {
@@ -541,6 +522,30 @@ void Scheduler::cleanupCommands(const std::vector<Command *> &Cmds) {
     MDeferredCleanupCommands.insert(MDeferredCleanupCommands.end(),
                                     Cmds.begin(), Cmds.end());
   }
+}
+
+void Scheduler::cleanupRecordResources(SYCLMemObjI *MemObj) {
+  // We are going to traverse a graph of finished commands. Gather stream
+  // objects from these commands if any and deallocate buffers for these stream
+  // objects, this is needed to guarantee that streamed data is printed and
+  // resources are released.
+  std::vector<std::shared_ptr<stream_impl>> StreamsToDeallocate;
+  // Similar to streams, we also collect the auxiliary resources used by the
+  // commands. Cleanup will make sure the commands do not own the resources
+  // anymore, so we just need them to survive the graph lock then they can die
+  // as they go out of scope.
+  std::vector<std::shared_ptr<const void>> AuxResourcesToDeallocate;
+  {
+    WriteLockT Lock(MGraphLock, std::defer_lock);
+    acquireWriteLock(Lock);
+    MemObjRecord *Record = MGraphBuilder.getMemObjRecord(MemObj);
+    assert(Record);
+    MGraphBuilder.decrementLeafCountersForRecord(Record);
+    MGraphBuilder.cleanupCommandsForRecord(Record, StreamsToDeallocate,
+                                           AuxResourcesToDeallocate);
+    MGraphBuilder.removeRecordForMemObj(MemObj);
+  }
+  deallocateStreams(StreamsToDeallocate);
 }
 
 } // namespace detail
