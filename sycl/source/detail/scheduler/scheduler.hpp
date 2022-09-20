@@ -463,6 +463,8 @@ protected:
 
   static void enqueueLeavesOfReqUnlocked(const Requirement *const Req,
                                          std::vector<Command *> &ToCleanUp);
+  void addMemObjToDeferredRelease(SYCLMemObjI *MemObj);
+  bool isRecordReadyForRelease(MemObjRecord *Record);
 
   /// Graph builder class.
   ///
@@ -770,6 +772,9 @@ protected:
 
   std::vector<Command *> MDeferredCleanupCommands;
   std::mutex MDeferredCleanupMutex;
+
+  std::vector<SYCLMemObjI *> MDeferredMemObjRelease;
+  std::mutex MDeferredMemReleaseMutex;
 
   QueueImplPtr DefaultHostQueue;
 

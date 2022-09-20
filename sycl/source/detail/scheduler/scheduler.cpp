@@ -26,6 +26,44 @@ namespace sycl {
 __SYCL_INLINE_VER_NAMESPACE(_V1) {
 namespace detail {
 
+bool Scheduler::isRecordReadyForRelease(MemObjRecord *Record) {
+  assert(Record);
+  // walk through LeavesCollection manually since now its iterator is not
+  // compatible with STL algorithms
+  for (Command *Cmd : Record->MReadLeaves)
+    if (!Cmd->getEvent()->isCompleted())
+      return false;
+  for (Command *Cmd : Record->MWriteLeaves)
+    if (!Cmd->getEvent()->isCompleted())
+      return false;
+  // all dependencies is completed and we can enqueue all ReleaseCmds first.
+  std::vector<Command *> ToCleanUp;
+  for (AllocaCommandBase *AllocaCmd : Record->MAllocaCommands) {
+    Command *ReleaseCmd = AllocaCmd->getReleaseCmd();
+    EnqueueResultT Res;
+    bool Enqueued = GraphProcessor::enqueueCommand(ReleaseCmd, Res, ToCleanUp);
+    if (!Enqueued && EnqueueResultT::SyclEnqueueFailed == Res.MResult)
+      throw runtime_error("Enqueue process failed.",
+                          PI_ERROR_INVALID_OPERATION);
+  }
+  // enqueue is fully done and we can check if ReleaseCmd is completed
+  for (AllocaCommandBase *AllocaCmd : Record->MAllocaCommands) {
+    Command *ReleaseCmd = AllocaCmd->getReleaseCmd();
+    if (!ReleaseCmd->getEvent()->isCompleted())
+      return false;
+  }
+  return true;
+}
+
+void Scheduler::addMemObjToDeferredRelease(SYCLMemObjI *MemObj) {
+  // If ReleaseCmd is not blocked - enqueue directly here, no result is needed
+  // since we just do it once.
+  std::ignore = isRecordReadyForRelease(MGraphBuilder.getMemObjRecord(MemObj));
+
+  std::lock_guard<std::mutex> Lock{MDeferredMemReleaseMutex};
+  MDeferredMemObjRelease.push_back(MemObj);
+}
+
 void Scheduler::waitForRecordToFinish(MemObjRecord *Record,
                                       ReadLockT &GraphReadLock) {
 #ifdef XPTI_ENABLE_INSTRUMENTATION
@@ -285,10 +323,13 @@ void Scheduler::removeMemoryObject(detail::SYCLMemObjI *MemObj,
         // No operations were performed on the mem object
         return;
 
-      waitForRecordToFinish(Record, Lock);
+      if (NotBlockingRelease)
+        addMemObjToDeferredRelease(MemObj);
+      else
+        waitForRecordToFinish(Record, Lock);
     }
 
-    {
+    if (!NotBlockingRelease) {
       WriteLockT Lock(MGraphLock, std::defer_lock);
       acquireWriteLock(Lock);
       MGraphBuilder.decrementLeafCountersForRecord(Record);
