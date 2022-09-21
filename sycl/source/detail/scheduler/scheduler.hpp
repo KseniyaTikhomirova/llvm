@@ -460,11 +460,11 @@ protected:
   void acquireWriteLock(WriteLockT &Lock);
 
   void cleanupCommands(const std::vector<Command *> &Cmds);
+  void cleanupMemObjects(const std::shared_ptr<MemObjRecord>& MemObjs, bool Blocking);
 
   static void enqueueLeavesOfReqUnlocked(const Requirement *const Req,
                                          std::vector<Command *> &ToCleanUp);
-  void addMemObjToDeferredRelease(SYCLMemObjI *MemObj);
-  bool isRecordReadyForRelease(MemObjRecord *Record);
+  bool isRecordReadyForRelease(MemObjRecord *Record, ReadLockT &GraphReadLock, bool Blocking);
 
   /// Graph builder class.
   ///
@@ -546,8 +546,8 @@ protected:
         std::vector<std::shared_ptr<sycl::detail::stream_impl>> &,
         std::vector<std::shared_ptr<const void>> &);
 
-    /// Removes the MemObjRecord for the memory object passed.
-    void removeRecordForMemObj(SYCLMemObjI *MemObject);
+    /// Releases the MemObjRecord for the memory object passed. Calling code is responsible for MemObjRecord deletion.
+    std::shared_ptr<MemObjRecord> releaseRecordForMemObj(SYCLMemObjI *MemObject);
 
     /// Adds new command to leaves if needed.
     void addNodeToLeaves(MemObjRecord *Record, Command *Cmd,
@@ -773,7 +773,7 @@ protected:
   std::vector<Command *> MDeferredCleanupCommands;
   std::mutex MDeferredCleanupMutex;
 
-  std::vector<SYCLMemObjI *> MDeferredMemObjRelease;
+  std::list<std::shared_ptr<MemObjRecord>> MDeferredMemObjRelease;
   std::mutex MDeferredMemReleaseMutex;
 
   QueueImplPtr DefaultHostQueue;

@@ -1279,13 +1279,15 @@ void Scheduler::GraphBuilder::cleanupFinishedCommands(
   handleVisitedNodes(MVisitedCmds);
 }
 
-void Scheduler::GraphBuilder::removeRecordForMemObj(SYCLMemObjI *MemObject) {
+std::shared_ptr<MemObjRecord> Scheduler::GraphBuilder::releaseRecordForMemObj(SYCLMemObjI *MemObject) {
   const auto It = std::find_if(
       MMemObjs.begin(), MMemObjs.end(),
       [MemObject](const SYCLMemObjI *Obj) { return Obj == MemObject; });
   if (It != MMemObjs.end())
     MMemObjs.erase(It);
+  std::shared_ptr<MemObjRecord> TempRecord = MemObject->MRecord;
   MemObject->MRecord.reset();
+  return TempRecord;
 }
 
 // Make Cmd depend on DepEvent from different context. Connection is performed
