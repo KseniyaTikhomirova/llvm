@@ -27,6 +27,7 @@ extern sycl::detail::SpinLock GlobalLock;
 
 extern bool HasZEPrinter;
 extern bool HasPIPrinter;
+extern bool HasSYPrinter;
 
 using HeaderPrinterT =
     std::function<void(const pi_plugin &, const xpti::function_with_args_t *)>;
@@ -49,6 +50,11 @@ static std::string getResult(pi_result Res) {
   return "UNKNOWN RESULT";
 }
 
+const auto PrintPrefix = [] {
+  if (HasSYPrinter)
+    std::cout << "*  ";
+};
+
 static void setupClassicPrinter() {
   ArgHandler = new sycl::xpti_helpers::PiArgumentsHandler();
 #define _PI_API(api)                                                           \
@@ -62,7 +68,8 @@ static void setupClassicPrinter() {
 #undef _PI_API
 
   ResultPrinter = new std::function(
-      [](pi_result Res) { std::cout << ") ---> " << Res << std::endl; });
+      [](pi_result Res) {
+      std::cout << ") ---> " << Res << std::endl; });
   HeaderPrinter = new std::function(
       [](const pi_plugin &Plugin, const xpti::function_with_args_t *Data) {
         ArgHandler->handle(Data->function_id, Plugin, std::nullopt,
@@ -73,6 +80,7 @@ static void setupClassicPrinter() {
 static void setupPrettyPrinter(bool Verbose) {
   HeaderPrinter = new std::function(
       [Verbose](const pi_plugin &, const xpti::function_with_args_t *Data) {
+        PrintPrefix();
         if (Verbose) {
           std::string Source = "<unknown>";
           size_t Line = 0;
@@ -89,6 +97,7 @@ static void setupPrettyPrinter(bool Verbose) {
           auto TID = std::this_thread::get_id();
           std::cout << "[PI:TID " << TID << ":";
           std::cout << Source << ":" << Line << "]\n";
+          PrintPrefix();
         } else {
           std::cout << "[PI] ";
         }
@@ -96,6 +105,7 @@ static void setupPrettyPrinter(bool Verbose) {
         switch (Data->function_id) {
 #include "pi_printers.def"
         }
+        PrintPrefix();
         std::cout << ")";
 
         if (HasZEPrinter) {
@@ -136,7 +146,6 @@ XPTI_CALLBACK_API void piCallback(uint16_t TraceType,
                                   uint64_t /*Instance*/, const void *UserData) {
   if (!HeaderPrinter || !ResultPrinter)
     return;
-
   // Lock while we print information
   std::lock_guard<sycl::detail::SpinLock> _{GlobalLock};
   const auto *Data = static_cast<const xpti::function_with_args_t *>(UserData);

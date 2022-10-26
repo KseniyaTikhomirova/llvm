@@ -9,12 +9,14 @@
 #include "xpti/xpti_trace_framework.h"
 
 #include <sycl/detail/spinlock.hpp>
+#include <iostream>
 
 sycl::detail::SpinLock GlobalLock;
 
 bool HasZEPrinter = false;
 bool HasCUPrinter = false;
 bool HasPIPrinter = false;
+bool HasSYPrinter = false;
 
 void zePrintersInit();
 void zePrintersFinish();
@@ -24,6 +26,8 @@ void cuPrintersFinish();
 #endif
 void piPrintersInit();
 void piPrintersFinish();
+void syPrintersInit();
+void syPrintersFinish();
 
 XPTI_CALLBACK_API void piCallback(uint16_t TraceType,
                                   xpti::trace_event_data_t *Parent,
@@ -39,6 +43,11 @@ XPTI_CALLBACK_API void cuCallback(uint16_t TraceType,
                                   xpti::trace_event_data_t *Event,
                                   uint64_t Instance, const void *UserData);
 #endif
+XPTI_CALLBACK_API void syCallback(uint16_t TraceType,
+                                  xpti::trace_event_data_t *Parent,
+                                  xpti::trace_event_data_t *Event,
+                                  uint64_t Instance, const void *UserData);
+
 XPTI_CALLBACK_API void xptiTraceInit(unsigned int /*major_version*/,
                                      unsigned int /*minor_version*/,
                                      const char * /*version_str*/,
@@ -73,6 +82,15 @@ XPTI_CALLBACK_API void xptiTraceInit(unsigned int /*major_version*/,
                          cuCallback);
 #endif
   }
+  if (std::string_view(StreamName) == "sycl.api.debug" &&
+      std::getenv("SYCL_TRACE_API_ENABLE")) {
+    syPrintersInit();
+    uint16_t StreamID = xptiRegisterStream(StreamName);
+    xptiRegisterCallback(StreamID, xpti::trace_function_begin,
+                         syCallback);
+    xptiRegisterCallback(StreamID, xpti::trace_function_end,
+                         syCallback);
+  }
 }
 
 XPTI_CALLBACK_API void xptiTraceFinish(const char *StreamName) {
@@ -90,4 +108,7 @@ XPTI_CALLBACK_API void xptiTraceFinish(const char *StreamName) {
            std::getenv("SYCL_TRACE_CU_ENABLE"))
     cuPrintersFinish();
 #endif
+  if (std::string_view(StreamName) == "sycl.api.debug" &&
+      std::getenv("SYCL_TRACE_API_ENABLE"))
+    syPrintersFinish();
 }

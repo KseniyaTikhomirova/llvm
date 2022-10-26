@@ -49,6 +49,10 @@ device::device(const device_selector &deviceSelector) {
 }
 
 std::vector<device> device::get_devices(info::device_type deviceType) {
+  const std::string functionName("device::get_devices");
+  #ifdef XPTI_ENABLE_INSTRUMENTATION
+  uint64_t CorrelationID = detail::emitFunctionBeginTrace(functionName.c_str());
+  #endif
   std::vector<device> devices;
   detail::device_filter_list *FilterList =
       detail::SYCLConfig<detail::SYCL_DEVICE_FILTER>::get();
@@ -83,6 +87,9 @@ std::vector<device> device::get_devices(info::device_type deviceType) {
                        found_devices.end());
     }
   }
+  #ifdef XPTI_ENABLE_INSTRUMENTATION
+  detail::emitFunctionEndTrace(CorrelationID, functionName.c_str());
+  #endif
 
   return devices;
 }

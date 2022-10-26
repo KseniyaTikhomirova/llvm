@@ -52,7 +52,18 @@ std::vector<device> platform::get_devices(info::device_type DeviceType) const {
 }
 
 std::vector<platform> platform::get_platforms() {
-  return detail::platform_impl::get_platforms();
+  std::string functionName(detail::code_location::current().functionName());
+  std::cout << "functionName = " << functionName << std::endl;
+  #ifdef XPTI_ENABLE_INSTRUMENTATION
+    uint64_t CorrelationID = detail::emitFunctionBeginTrace(functionName.c_str());
+  #endif
+  auto Platforms = detail::platform_impl::get_platforms();
+
+  #ifdef XPTI_ENABLE_INSTRUMENTATION
+    detail::emitFunctionEndTrace(CorrelationID, functionName.c_str());
+  #endif
+
+  return Platforms;
 }
 
 backend platform::get_backend() const noexcept { return getImplBackend(impl); }

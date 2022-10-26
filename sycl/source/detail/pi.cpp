@@ -54,6 +54,9 @@ xpti_td *GSYCLGraphEvent = nullptr;
 xpti_td *GPICallEvent = nullptr;
 /// Event to be used by PI layer calls with arguments
 xpti_td *GPIArgCallEvent = nullptr;
+
+extern xpti_td *GAPICallEvent;
+xpti_td *GAPIArgCallEvent = nullptr;
 /// Constants being used as placeholder until one is able to reliably get the
 /// version of the SYCL runtime
 constexpr uint32_t GMajVer = __LIBSYCL_MAJOR_VERSION;
@@ -508,6 +511,24 @@ static void initializePlugins(std::vector<plugin> &Plugins) {
   GPIArgCallEvent = xptiMakeEvent("PI Layer with arguments", &PIArgPayload,
                                   xpti::trace_algorithm_event, xpti_at::active,
                                   &PiArgInstanceNo);
+  
+  // Let subscribers know a new stream is being initialized
+  GlobalHandler::instance().getXPTIRegistry().initializeStream(
+      SYCL_APICALL_STREAM_NAME, GMajVer, GMinVer, GVerStr);
+  xpti::payload_t SYCLPayload("SYCL Interface Layer");
+  uint64_t SYCLInstanceNo;
+  GAPICallEvent =
+      xptiMakeEvent("SYCL API Layer", &SYCLPayload, xpti::trace_algorithm_event,
+                    xpti_at::active, &SYCLInstanceNo);
+
+  GlobalHandler::instance().getXPTIRegistry().initializeStream(
+      SYCL_APIDEBUGCALL_STREAM_NAME, GMajVer, GMinVer, GVerStr);
+  xpti::payload_t SYCLArgPayload(
+      "SYCL Interface Layer (with function arguments)");
+  uint64_t SYCLArgInstanceNo;
+  GAPIArgCallEvent = xptiMakeEvent("SYCL API Layer with arguments", &SYCLArgPayload,
+                                  xpti::trace_algorithm_event, xpti_at::active,
+                                  &SYCLArgInstanceNo);
 #endif
 }
 

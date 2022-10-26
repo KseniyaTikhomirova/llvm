@@ -34,6 +34,9 @@ inline constexpr const char *SYCL_PIDEBUGCALL_STREAM_NAME = "sycl.pi.debug";
 inline constexpr auto SYCL_MEM_ALLOC_STREAM_NAME =
     "sycl.experimental.mem_alloc";
 
+inline constexpr const char *SYCL_APICALL_STREAM_NAME = "sycl.api";
+inline constexpr const char *SYCL_APIDEBUGCALL_STREAM_NAME = "sycl.api.debug";
+
 #ifdef XPTI_ENABLE_INSTRUMENTATION
 extern uint8_t GBufferStreamID;
 extern uint8_t GMemAllocStreamID;
