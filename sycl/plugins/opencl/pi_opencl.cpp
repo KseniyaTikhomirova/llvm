@@ -295,8 +295,12 @@ pi_result piDeviceGetInfo(pi_device device, pi_device_info paramName,
     std::memcpy(paramValue, &result, sizeof(cl_bool));
     return PI_SUCCESS;
   }
-  case PI_EXT_ONEAPI_DEVICE_INFO_BFLOAT16:
-    return PI_ERROR_INVALID_VALUE;
+  case PI_EXT_ONEAPI_DEVICE_INFO_BFLOAT16_MATH_FUNCTIONS: {
+    // bfloat16 math functions are not yet supported on Intel GPUs.
+    cl_bool result = false;
+    std::memcpy(paramValue, &result, sizeof(cl_bool));
+    return PI_SUCCESS;
+  }
   case PI_DEVICE_INFO_IMAGE_SRGB: {
     cl_bool result = true;
     std::memcpy(paramValue, &result, sizeof(cl_bool));
@@ -330,6 +334,11 @@ pi_result piDeviceGetInfo(pi_device device, pi_device_info paramName,
         out[2] = Max;
       return PI_SUCCESS;
     }
+  case PI_EXT_INTEL_DEVICE_INFO_MAX_COMPUTE_QUEUE_INDICES: {
+    pi_int32 result = 1;
+    std::memcpy(paramValue, &result, sizeof(pi_int32));
+    return PI_SUCCESS;
+  }
 
   default:
     cl_int result = clGetDeviceInfo(
@@ -457,6 +466,16 @@ pi_result piextDeviceCreateWithNativeHandle(pi_native_handle nativeHandle,
   return PI_SUCCESS;
 }
 
+pi_result piextQueueCreate(pi_context Context, pi_device Device,
+                           pi_queue_properties *Properties, pi_queue *Queue) {
+  assert(Properties);
+  // Expect flags mask to be passed first.
+  assert(Properties[0] == PI_QUEUE_FLAGS);
+  pi_queue_properties Flags = Properties[1];
+  // Extra data isn't supported yet.
+  assert(Properties[2] == 0);
+  return piQueueCreate(Context, Device, Flags, Queue);
+}
 pi_result piQueueCreate(pi_context context, pi_device device,
                         pi_queue_properties properties, pi_queue *queue) {
   assert(queue && "piQueueCreate failed, queue argument is null");
@@ -470,9 +489,10 @@ pi_result piQueueCreate(pi_context context, pi_device device,
 
   // Check that unexpected bits are not set.
   assert(!(properties &
-           ~(PI_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE |
-             PI_QUEUE_PROFILING_ENABLE | PI_QUEUE_ON_DEVICE |
-             PI_QUEUE_ON_DEVICE_DEFAULT | PI_EXT_ONEAPI_QUEUE_DISCARD_EVENTS)));
+           ~(PI_QUEUE_FLAG_OUT_OF_ORDER_EXEC_MODE_ENABLE |
+             PI_QUEUE_FLAG_PROFILING_ENABLE | PI_QUEUE_FLAG_ON_DEVICE |
+             PI_QUEUE_FLAG_ON_DEVICE_DEFAULT |
+             PI_EXT_ONEAPI_QUEUE_FLAG_DISCARD_EVENTS)));
 
   // Properties supported by OpenCL backend.
   cl_command_queue_properties SupportByOpenCL =
@@ -499,6 +519,28 @@ pi_result piQueueCreate(pi_context context, pi_device device,
       cast<cl_context>(context), cast<cl_device_id>(device),
       CreationFlagProperties, &ret_err));
   return cast<pi_result>(ret_err);
+}
+
+pi_result piQueueGetInfo(pi_queue queue, pi_queue_info param_name,
+                         size_t param_value_size, void *param_value,
+                         size_t *param_value_size_ret) {
+  if (queue == nullptr) {
+    return PI_ERROR_INVALID_QUEUE;
+  }
+
+  switch (param_name) {
+  case PI_EXT_ONEAPI_QUEUE_INFO_EMPTY:
+    // OpenCL doesn't provide API to check the status of the queue.
+    return PI_ERROR_INVALID_VALUE;
+  default:
+    cl_int CLErr = clGetCommandQueueInfo(
+        cast<cl_command_queue>(queue), cast<cl_command_queue_info>(param_name),
+        param_value_size, param_value, param_value_size_ret);
+    if (CLErr != CL_SUCCESS) {
+      return cast<pi_result>(CLErr);
+    }
+  }
+  return PI_SUCCESS;
 }
 
 pi_result piextQueueCreateWithNativeHandle(pi_native_handle nativeHandle,
@@ -973,8 +1015,13 @@ pi_result piKernelGetSubGroupInfo(pi_kernel kernel, pi_device device,
 pi_result piEventCreate(pi_context context, pi_event *ret_event) {
 
   pi_result ret_err = PI_ERROR_INVALID_OPERATION;
-  *ret_event = cast<pi_event>(
-      clCreateUserEvent(cast<cl_context>(context), cast<cl_int *>(&ret_err)));
+  auto *cl_err = cast<cl_int *>(&ret_err);
+
+  cl_event e = clCreateUserEvent(cast<cl_context>(context), cl_err);
+  *ret_event = cast<pi_event>(e);
+  if (*cl_err != CL_SUCCESS)
+    return ret_err;
+  *cl_err = clSetUserEventStatus(e, CL_COMPLETE);
   return ret_err;
 }
 
@@ -1540,7 +1587,8 @@ pi_result piPluginInit(pi_plugin *PluginInit) {
   _PI_CL(piextContextCreateWithNativeHandle, piextContextCreateWithNativeHandle)
   // Queue
   _PI_CL(piQueueCreate, piQueueCreate)
-  _PI_CL(piQueueGetInfo, clGetCommandQueueInfo)
+  _PI_CL(piextQueueCreate, piextQueueCreate)
+  _PI_CL(piQueueGetInfo, piQueueGetInfo)
   _PI_CL(piQueueFinish, clFinish)
   _PI_CL(piQueueFlush, clFlush)
   _PI_CL(piQueueRetain, clRetainCommandQueue)

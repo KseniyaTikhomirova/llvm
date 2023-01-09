@@ -21,9 +21,7 @@
 
 namespace sycl {
 __SYCL_INLINE_VER_NAMESPACE(_V1) {
-namespace ext {
-namespace oneapi {
-namespace detail {
+namespace ext::oneapi::detail {
 
 std::vector<std::string> tokenize(const std::string &Filter,
                                   const std::string &Delim) {
@@ -76,6 +74,8 @@ filter create_filter(const std::string &Input) {
       Result.Backend = backend::ext_oneapi_cuda;
     } else if (Token == "hip" && !Result.Backend) {
       Result.Backend = backend::ext_oneapi_hip;
+    } else if (Token == "esimd_emulator" && !Result.Backend) {
+      Result.Backend = backend::ext_intel_esimd_emulator;
     } else if (std::regex_match(Token, IntegerExpr) && !Result.DeviceNum) {
       try {
         Result.DeviceNum = std::stoi(Token);
@@ -165,9 +165,7 @@ void filter_selector_impl::reset() const {
   mNumDevicesSeen = 0;
 }
 
-} // namespace detail
-} // namespace oneapi
-} // namespace ext
+} // namespace ext::oneapi::detail
 
 namespace __SYCL2020_DEPRECATED("use 'ext::oneapi' instead") ONEAPI {
 using namespace ext::oneapi;

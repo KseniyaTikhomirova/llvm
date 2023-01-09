@@ -17,10 +17,8 @@
 
 namespace sycl {
 __SYCL_INLINE_VER_NAMESPACE(_V1) {
-namespace ext {
-namespace intel {
-namespace experimental {
-namespace esimd {
+namespace ext::intel {
+namespace experimental::esimd {
 
 /// @addtogroup sycl_esimd_memory
 /// @{
@@ -1299,6 +1297,8 @@ __ESIMD_API void lsc_store2d(T *Ptr, unsigned SurfaceWidth,
 /// @param offsets is the zero-based offsets.
 /// @param pred is predicates.
 ///
+/// @return A vector of the old values at the memory locations before the
+///   update.
 template <__ESIMD_NS::atomic_op Op, typename T, int N,
           lsc_data_size DS = lsc_data_size::default_size>
 __ESIMD_API __ESIMD_NS::simd<T, N>
@@ -1336,6 +1336,8 @@ lsc_slm_atomic_update(__ESIMD_NS::simd<uint32_t, N> offsets,
 /// @param src0 is the first atomic operand.
 /// @param pred is predicates.
 ///
+/// @return A vector of the old values at the memory locations before the
+///   update.
 template <__ESIMD_NS::atomic_op Op, typename T, int N,
           lsc_data_size DS = lsc_data_size::default_size>
 __ESIMD_API __ESIMD_NS::simd<T, N>
@@ -1376,6 +1378,8 @@ lsc_slm_atomic_update(__ESIMD_NS::simd<uint32_t, N> offsets,
 /// @param src1 is the second atomic operand.
 /// @param pred is predicates.
 ///
+/// @return A vector of the old values at the memory locations before the
+///   update.
 template <__ESIMD_NS::atomic_op Op, typename T, int N,
           lsc_data_size DS = lsc_data_size::default_size>
 __ESIMD_API __ESIMD_NS::simd<T, N>
@@ -1551,6 +1555,8 @@ lsc_atomic_update(T *p, __ESIMD_NS::simd<uint32_t, N> offsets,
 /// @param offsets is the zero-based offsets.
 /// @param pred is predicates.
 ///
+/// @return A vector of the old values at the memory locations before the
+///   update.
 template <__ESIMD_NS::atomic_op Op, typename T, int N,
           lsc_data_size DS = lsc_data_size::default_size,
           cache_hint L1H = cache_hint::none, cache_hint L3H = cache_hint::none,
@@ -1602,6 +1608,8 @@ lsc_atomic_update(AccessorTy acc, __ESIMD_NS::simd<uint32_t, N> offsets,
 /// @param src0 is the first atomic operand.
 /// @param pred is predicates.
 ///
+/// @return A vector of the old values at the memory locations before the
+///   update.
 template <__ESIMD_NS::atomic_op Op, typename T, int N,
           lsc_data_size DS = lsc_data_size::default_size,
           cache_hint L1H = cache_hint::none, cache_hint L3H = cache_hint::none,
@@ -1654,6 +1662,8 @@ lsc_atomic_update(AccessorTy acc, __ESIMD_NS::simd<uint32_t, N> offsets,
 /// @param src1 is the second atomic operand.
 /// @param pred is predicates.
 ///
+/// @return A vector of the old values at the memory locations before the
+///   update.
 template <__ESIMD_NS::atomic_op Op, typename T, int N,
           lsc_data_size DS = lsc_data_size::default_size,
           cache_hint L1H = cache_hint::none, cache_hint L3H = cache_hint::none,
@@ -1711,8 +1721,7 @@ __ESIMD_API void lsc_fence(__ESIMD_NS::simd_mask<N> pred = 1) {
 
 /// @} sycl_esimd_memory_lsc
 
-} // namespace esimd
-} // namespace experimental
+} // namespace experimental::esimd
 
 namespace esimd {
 
@@ -1747,7 +1756,6 @@ __ESIMD_API simd<T, N> atomic_update(T *p, simd<unsigned, N> offset,
 }
 
 } // namespace esimd
-} // namespace intel
-} // namespace ext
+} // namespace ext::intel
 } // __SYCL_INLINE_VER_NAMESPACE(_V1)
 } // namespace sycl

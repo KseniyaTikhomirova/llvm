@@ -26,26 +26,23 @@ struct TestCtx {
 };
 static TestCtx TestContext;
 
-pi_result redefinedQueueCreate(pi_context context, pi_device device,
-                               pi_queue_properties properties,
-                               pi_queue *queue) {
+pi_result redefinedQueueCreateEx(pi_context context, pi_device device,
+                                 pi_queue_properties *properties,
+                                 pi_queue *queue) {
+  assert(properties && properties[0] == PI_QUEUE_FLAGS);
   if (!TestContext.SupportOOO &&
-      properties & PI_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE) {
+      properties[1] & PI_QUEUE_FLAG_OUT_OF_ORDER_EXEC_MODE_ENABLE) {
     return PI_ERROR_INVALID_QUEUE_PROPERTIES;
   }
   return PI_SUCCESS;
 }
-
-pi_result redefinedQueueRelease(pi_queue Queue) { return PI_SUCCESS; }
 
 pi_result redefinedUSMEnqueueMemset(pi_queue Queue, void *Ptr, pi_int32 Value,
                                     size_t Count,
                                     pi_uint32 Num_events_in_waitlist,
                                     const pi_event *Events_waitlist,
                                     pi_event *Event) {
-  // Provide a dummy non-nullptr value
   TestContext.EventReferenceCount = 1;
-  *Event = reinterpret_cast<pi_event>(1);
   return PI_SUCCESS;
 }
 pi_result redefinedEnqueueMemBufferFill(pi_queue Queue, pi_mem Buffer,
@@ -54,9 +51,7 @@ pi_result redefinedEnqueueMemBufferFill(pi_queue Queue, pi_mem Buffer,
                                         pi_uint32 NumEventsInWaitList,
                                         const pi_event *EventWaitList,
                                         pi_event *Event) {
-  // Provide a dummy non-nullptr value
   TestContext.EventReferenceCount = 1;
-  *Event = reinterpret_cast<pi_event>(1);
   return PI_SUCCESS;
 }
 
@@ -67,12 +62,6 @@ pi_result redefinedQueueFinish(pi_queue Queue) {
 pi_result redefinedEventsWait(pi_uint32 num_events,
                               const pi_event *event_list) {
   ++TestContext.NEventsWaitedFor;
-  return PI_SUCCESS;
-}
-
-pi_result redefinedEventGetInfo(pi_event event, pi_event_info param_name,
-                                size_t param_value_size, void *param_value,
-                                size_t *param_value_size_ret) {
   return PI_SUCCESS;
 }
 
@@ -89,17 +78,16 @@ pi_result redefinedEventRelease(pi_event event) {
 TEST(QueueWait, QueueWaitTest) {
   sycl::unittest::PiMock Mock;
   sycl::platform Plt = Mock.getPlatform();
-  Mock.redefine<detail::PiApiKind::piQueueCreate>(redefinedQueueCreate);
-  Mock.redefine<detail::PiApiKind::piQueueRelease>(redefinedQueueRelease);
-  Mock.redefine<detail::PiApiKind::piQueueFinish>(redefinedQueueFinish);
-  Mock.redefine<detail::PiApiKind::piextUSMEnqueueMemset>(
+  Mock.redefineBefore<detail::PiApiKind::piextQueueCreate>(
+      redefinedQueueCreateEx);
+  Mock.redefineBefore<detail::PiApiKind::piQueueFinish>(redefinedQueueFinish);
+  Mock.redefineBefore<detail::PiApiKind::piextUSMEnqueueMemset>(
       redefinedUSMEnqueueMemset);
-  Mock.redefine<detail::PiApiKind::piEventsWait>(redefinedEventsWait);
-  Mock.redefine<detail::PiApiKind::piEnqueueMemBufferFill>(
+  Mock.redefineBefore<detail::PiApiKind::piEventsWait>(redefinedEventsWait);
+  Mock.redefineBefore<detail::PiApiKind::piEnqueueMemBufferFill>(
       redefinedEnqueueMemBufferFill);
-  Mock.redefine<detail::PiApiKind::piEventGetInfo>(redefinedEventGetInfo);
-  Mock.redefine<detail::PiApiKind::piEventRetain>(redefinedEventRetain);
-  Mock.redefine<detail::PiApiKind::piEventRelease>(redefinedEventRelease);
+  Mock.redefineBefore<detail::PiApiKind::piEventRetain>(redefinedEventRetain);
+  Mock.redefineBefore<detail::PiApiKind::piEventRelease>(redefinedEventRelease);
   context Ctx{Plt.get_devices()[0]};
   queue Q{Ctx, default_selector()};
 
