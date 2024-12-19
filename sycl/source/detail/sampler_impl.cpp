@@ -9,6 +9,7 @@
 #include <detail/context_impl.hpp>
 #include <detail/sampler_impl.hpp>
 #include <sycl/property_list.hpp>
+#include <sycl/sampler.hpp>
 
 namespace sycl {
 inline namespace _V1 {
@@ -158,7 +159,7 @@ sampler_impl::get_coordinate_normalization_mode() const {
 }
 
 void sampler_impl::verifyProps(const property_list &Props) const {
-  auto NoAllowedPropertiesCheck = [](int PropertyKind) { return false; };
+  auto NoAllowedPropertiesCheck = [](int) { return false; };
   detail::PropertyValidator::checkPropsAndThrow(Props, NoAllowedPropertiesCheck,
                                                 NoAllowedPropertiesCheck);
 }
